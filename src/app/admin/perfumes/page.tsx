@@ -22,13 +22,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Trash2, Upload, X, Sparkles, Package, Tag, FileText, Palette } from 'lucide-react';
+import { PlusCircle, Trash2, Upload, X, Sparkles, Package, Tag, FileText, Palette, Edit } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePerfumes } from '@/context/PerfumeContext';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import type { Perfume } from '@/lib/types';
-
+import { useToast } from '@/hooks/use-toast';
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:9090';
 
 const isRecent = (dateString: string) => {
@@ -127,10 +127,13 @@ export default function PerfumesAdminPage() {
     category: 'Unisex' as Perfume['category'],
     notes: '',
   });
+  const [editingPerfume, setEditingPerfume] = useState<Perfume | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
 
   const uploadImage = async (file: File): Promise<string> => {
     const formData = new FormData();
@@ -193,18 +196,84 @@ export default function PerfumesAdminPage() {
     }
   };
 
+  // Función para manejar la edición de perfume
+  const handleEditPerfume = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPerfume) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      let imageUrl = editingPerfume.imageUrl;
+      
+      if (selectedImage) {
+        try {
+          imageUrl = await uploadImage(selectedImage);
+        } catch (error) {
+          console.error('Error subiendo imagen:', error);
+        }
+      }
+
+      const updatedPerfumeData = {
+        name: editingPerfume.name,
+        brand: editingPerfume.brand,
+        price: editingPerfume.price,
+        stock: editingPerfume.stock,
+        description: editingPerfume.description,
+        category: editingPerfume.category,
+        notes: editingPerfume.notes,
+        imageUrl: imageUrl,
+        published: editingPerfume.published
+      };
+
+      // Llamar a la API para actualizar el perfume
+      const response = await fetch(`${API_BASE_URL}/perfumes/${editingPerfume.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedPerfumeData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al actualizar el perfume');
+      }
+
+      const updatedPerfume = await response.json();
+      
+      // Actualizar el estado local
+      refreshPerfumes();
+      
+      setEditingPerfume(null);
+      setSelectedImage(null);
+      setImagePreview('');
+      setIsEditDialogOpen(false);
+      
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Función para abrir el diálogo de edición
+  const handleOpenEditDialog = (perfume: Perfume) => {
+    setEditingPerfume(perfume);
+    setImagePreview(perfume.imageUrl);
+    setSelectedImage(null);
+    setIsEditDialogOpen(true);
+  };
+
   const handleImageChange = (file: File | null, previewUrl: string) => {
     setSelectedImage(file);
     setImagePreview(previewUrl);
   };
 
-  const handleDeletePerfume = async (id: string) => {
-    try {
-      await deletePerfume(id);
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  }
+  // Ahora es mucho más simple - solo llama a la función
+const handleDeletePerfume = async (id: string) => {
+  await deletePerfume(id);
+  // No necesitas try-catch porque el contexto ya maneja todos los casos
+};
 
   const handleTogglePublish = async (id: string) => {
     try {
@@ -217,6 +286,15 @@ export default function PerfumesAdminPage() {
   const handleDialogOpenChange = (open: boolean) => {
     setIsDialogOpen(open);
     if (!open) {
+      setSelectedImage(null);
+      setImagePreview('');
+    }
+  };
+
+  const handleEditDialogOpenChange = (open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setEditingPerfume(null);
       setSelectedImage(null);
       setImagePreview('');
     }
@@ -564,7 +642,20 @@ export default function PerfumesAdminPage() {
                       {perfume.published ? '🌿 Publicado' : '📦 Borrador'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right">
+                  <div className="flex justify-end items-center space-x-2">
+                    {/* Botón Editar */}
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleOpenEditDialog(perfume)}
+                      className="border-blue-200 hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 rounded-lg"
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Editar
+                    </Button>
+
+                    {/* Botón Publicar / Ocultar */}
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -573,16 +664,19 @@ export default function PerfumesAdminPage() {
                     >
                       {perfume.published ? 'Ocultar' : 'Publicar'}
                     </Button>
+
+                    {/* Botón Eliminar */}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button 
                           variant="destructive" 
                           size="sm"
-                          className="rounded-lg hover:shadow-md transition-all duration-200"
+                          className="rounded-lg hover:shadow-md transition-all duration-200 flex items-center justify-center"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
+
                       <AlertDialogContent className="border-0 shadow-2xl rounded-2xl">
                         <AlertDialogHeader>
                           <AlertDialogTitle className="text-foreground flex items-center gap-2 text-xl">
@@ -590,7 +684,8 @@ export default function PerfumesAdminPage() {
                             Confirmar Eliminación
                           </AlertDialogTitle>
                           <AlertDialogDescription className="text-foreground/70 text-base">
-                            ¿Estás seguro de eliminar <span className="font-semibold text-foreground">"{perfume.name}"</span>? 
+                            ¿Estás seguro de eliminar 
+                            <span className="font-semibold text-foreground"> "{perfume.name}"</span>? 
                             Esta acción no se puede deshacer.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -608,13 +703,227 @@ export default function PerfumesAdminPage() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
-                  </TableCell>
+                  </div>
+                </TableCell>
+
                 </TableRow>
               ))
             )}  
           </TableBody>
         </Table>
       </div>
+
+      {/* Diálogo de Edición */}
+      <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogOpenChange}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto p-0 border-0 bg-transparent shadow-none">
+          <div className="bg-background rounded-2xl border border-primary/20 shadow-2xl overflow-hidden">
+            {/* Header con gradiente */}
+            <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-blue-600 py-4 px-8">
+              <DialogHeader className="text-center">
+                <DialogTitle className="text-3xl font-bold text-white flex items-center justify-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-full">
+                    <Edit className="h-6 w-6 text-white" />
+                  </div>
+                  Editar Fragancia
+                </DialogTitle>
+                <p className="text-white/80 mt-2 text-lg">
+                  Actualiza la información de {editingPerfume?.name}
+                </p>
+              </DialogHeader>
+            </div>
+
+            {editingPerfume && (
+              <form onSubmit={handleEditPerfume}>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 p-8">
+                  {/* Sección de Imagen */}
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-foreground flex items-center justify-center gap-2">
+                        <Palette className="h-5 w-5 text-primary" />
+                        Imagen de la Fragancia
+                      </h3>
+                      <p className="text-foreground/60 mt-1">Actualiza la imagen del perfume</p>
+                    </div>
+                    <ImageUpload 
+                      onImageChange={handleImageChange}
+                      currentImage={imagePreview}
+                    />
+                  </div>
+                  
+                  {/* Sección de Formulario */}
+                  <div className="space-y-6">
+                    {/* Información Básica */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-foreground border-l-4 border-primary pl-3">
+                        Información Básica
+                      </h3>
+                      
+                      <div className="grid gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Nombre de la Fragancia *</Label>
+                          <Input 
+                            value={editingPerfume.name} 
+                            onChange={e => setEditingPerfume({...editingPerfume, name: e.target.value})} 
+                            placeholder="Ej: Esencia Nocturna"
+                            className="w-full border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                            required 
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Marca *</Label>
+                          <Input 
+                            value={editingPerfume.brand} 
+                            onChange={e => setEditingPerfume({...editingPerfume, brand: e.target.value})} 
+                            placeholder="Ej: Lujo Fragrances"
+                            className="w-full border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                            required 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Precio y Stock */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-foreground border-l-4 border-purple-500 pl-3">
+                        Precio e Inventario
+                      </h3>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Precio *</Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground font-semibold">
+                              $
+                            </span>
+                            <Input 
+                              type="number" 
+                              step="0.01"
+                              min="0"
+                              value={editingPerfume.price} 
+                              onChange={e => setEditingPerfume({...editingPerfume, price: parseFloat(e.target.value)})} 
+                              className="pl-8 border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                              placeholder="0.00"
+                              required 
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Stock *</Label>
+                          <Input 
+                            type="number" 
+                            min="0"
+                            value={editingPerfume.stock} 
+                            onChange={e => setEditingPerfume({...editingPerfume, stock: parseInt(e.target.value, 10)})} 
+                            className="border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                            placeholder="0"
+                            required 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Categoría */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-foreground border-l-4 border-pink-500 pl-3">
+                        Categoría
+                      </h3>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-foreground">Tipo de Fragancia *</Label>
+                        <Select 
+                          value={editingPerfume.category} 
+                          onValueChange={(v: Perfume['category']) => setEditingPerfume({...editingPerfume, category: v})}
+                        >
+                          <SelectTrigger className="border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg">
+                            <SelectValue placeholder="Selecciona una categoría" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Para Ella" className="flex items-center gap-2">
+                              <span className="text-lg">👩</span> Para Ella
+                            </SelectItem>
+                            <SelectItem value="Para Él" className="flex items-center gap-2">
+                              <span className="text-lg">👨</span> Para Él
+                            </SelectItem>
+                            <SelectItem value="Unisex" className="flex items-center gap-2">
+                              <span className="text-lg">👥</span> Unisex
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Descripción y Notas */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-foreground border-l-4 border-blue-500 pl-3">
+                        Descripción
+                      </h3>
+                      
+                      <div className="grid gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Descripción *</Label>
+                          <Textarea 
+                            value={editingPerfume.description} 
+                            onChange={e => setEditingPerfume({...editingPerfume, description: e.target.value})} 
+                            placeholder="Describe el aroma, las sensaciones y la personalidad de esta fragancia..."
+                            className="min-h-[100px] resize-vertical border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                            required 
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-foreground">Notas de Fragancia *</Label>
+                          <Input 
+                            placeholder="bergamota, jazmín, rosa, sándalo, vainilla..."
+                            value={editingPerfume.notes.join(', ')} 
+                            onChange={e => setEditingPerfume({...editingPerfume, notes: e.target.value.split(',').map(n => n.trim()).filter(n => n)})} 
+                            className="border-2 border-primary/20 focus:border-primary transition-all duration-200 rounded-lg"
+                            required 
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            💡 Separa cada nota con una coma
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <DialogFooter className="px-8 pb-8 pt-6 border-t border-primary/10">
+                  <div className="flex gap-3 w-full">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setIsEditDialogOpen(false)}
+                      className="flex-1 border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 rounded-lg py-3"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className="flex-1 bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg py-3"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                          Actualizando...
+                        </>
+                      ) : (
+                        <>
+                          <Edit className="mr-2 h-5 w-5" />
+                          Actualizar Fragancia
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </form>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -182,32 +182,57 @@ export const PerfumeProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Eliminar perfume
-  const deletePerfume = async (id: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/perfumes/${id}`, {
-        method: 'DELETE',
-      });
+  // Eliminar perfume - VERSIÓN SIN ERROR
+const deletePerfume = async (id: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/perfumes/${id}`, {
+      method: 'DELETE',
+    });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete perfume');
-      }
-
-      setPerfumes(prev => prev.filter(p => p.id !== id));
-      toast({ 
-        title: 'Perfume Eliminado', 
-        description: 'El perfume ha sido eliminado permanentemente.', 
-        variant: 'destructive' 
+    if (!response.ok) {
+      // ❌ NO LANZAMOS ERROR - En su lugar, manejamos el caso aquí mismo
+      const errorText = await response.text();
+      console.warn('No se pudo eliminar el perfume:', errorText);
+      
+      // Mostramos el toast informativo directamente desde el contexto
+      toast({
+        title: '💡 Recomendación',
+        description: (
+          <div className="space-y-2">
+            <p>Este perfume no se puede eliminar porque tiene pedidos asociados.</p>
+            <p className="text-sm opacity-80">
+              Sugerencia: Edítalo para crear una nueva versión u ocúltalo del catálogo.
+            </p>
+          </div>
+        ),
+        variant: 'default',
+        className: 'bg-blue-50 border-blue-200 text-blue-800'
       });
-    } catch (error) {
-      console.error("Error deleting perfume: ", error);
-      toast({ 
-        title: 'Error', 
-        description: 'No se pudo eliminar el perfume.', 
-        variant: 'destructive' 
-      });
-      throw error;
+      
+      // ❌ IMPORTANTE: No lanzamos error, simplemente retornamos
+      return;
     }
-  };
+
+    // ✅ Solo si la eliminación fue exitosa, actualizamos el estado
+    setPerfumes(prev => prev.filter(p => p.id !== id));
+    toast({ 
+      title: 'Perfume Eliminado', 
+      description: 'El perfume ha sido eliminado permanentemente.', 
+      variant: 'destructive' 
+    });
+    
+  } catch (error) {
+    console.error("Error deleting perfume: ", error);
+    
+    // También mostramos toast informativo para errores de red, etc.
+    toast({
+      title: '💡 Información',
+      description: 'No se pudo completar la eliminación. El perfume puede tener pedidos asociados.',
+      variant: 'default',
+      className: 'bg-blue-50 border-blue-200 text-blue-800'
+    });
+  }
+};
 
   // Cambiar estado de publicación
   const togglePublishStatus = async (id: string) => {
