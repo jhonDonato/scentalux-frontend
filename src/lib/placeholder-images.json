@@ -1,0 +1,52 @@
+{
+  "placeholderImages": [
+    {
+      "id": "ceviche",
+      "description": "Ceviche Clásico",
+      "imageUrl": "https://images.unsplash.com/photo-1619221881833-5e5aeff458fd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxjZXZpY2hlJTIwZmlzaHxlbnwwfHx8fDE3NjUxNTM2MjF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "ceviche fish"
+    },
+    {
+      "id": "arroz-con-mariscos",
+      "description": "Arroz con Mariscos",
+      "imageUrl": "https://images.unsplash.com/photo-1554371650-4484f3a102f2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxzZWFmb29kJTIwcmljZXxlbnwwfHx8fDE3NjUxNTM2MjF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "seafood rice"
+    },
+    {
+      "id": "pescado-frito",
+      "description": "Pescado Frito Entero",
+      "imageUrl": "https://images.unsplash.com/photo-1673436977947-0787164a9abc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxmcmllZCUyMGZpc2h8ZW58MHx8fHwxNzY1MDkxODQzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "fried fish"
+    },
+    {
+      "id": "pulpo-a-la-parrilla",
+      "description": "Pulpo a la Parrilla",
+      "imageUrl": "https://images.unsplash.com/photo-1764397514747-8272f2da3f36?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxncmlsbGVkJTIwb2N0b3B1c3xlbnwwfHx8fDE3NjUxNTM2MjF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "grilled octopus"
+    },
+    {
+      "id": "causa-de-langostinos",
+      "description": "Causa de Langostinos",
+      "imageUrl": "https://images.unsplash.com/photo-1628430045314-e20b77ba8b75?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxzaHJpbXAlMjBwb3RhdG98ZW58MHx8fHwxNzY1MTUzNjIxfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "shrimp potato"
+    },
+    {
+      "id": "choritos-a-la-chalaca",
+      "description": "Choritos a la Chalaca",
+      "imageUrl": "https://images.unsplash.com/photo-1548863475-7b857937adb8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxtdXNzZWxzJTIwc2FsYWR8ZW58MHx8fHwxNzY1MTUzNjIyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mussels salad"
+    },
+    {
+      "id": "sopa-parihuela",
+      "description": "Sopa Parihuela",
+      "imageUrl": "https://images.unsplash.com/photo-1571809839227-b2ac3d261257?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxzZWFmb29kJTIwc291cHxlbnwwfHx8fDE3NjUxNTM2MjJ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "seafood soup"
+    },
+    {
+      "id": "jalea-mixta",
+      "description": "Jalea Mixta",
+      "imageUrl": "https://images.unsplash.com/photo-1587606381492-7586d66a04a5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxmcmllZCUyMHNlYWZvb2R8ZW58MHx8fHwxNzY1MTUzNjIxfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "fried seafood"
+    }
+  ]
+}
