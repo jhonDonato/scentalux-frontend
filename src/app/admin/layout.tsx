@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from 'react';
@@ -22,7 +21,6 @@ export default function AdminLayout({
   }, [user, isLoading, router]);
 
   if (isLoading || !user || user.role !== 'admin') {
-    // Show a loading state while we verify auth
     return (
         <div className="flex h-screen w-screen items-center justify-center">
             <div>Cargando y verificando acceso...</div>
@@ -32,7 +30,8 @@ export default function AdminLayout({
 
   const navItems = [
     { href: '/admin', label: 'Reportes', icon: BarChart3 },
-    { href: '/menu-editor', label: 'Editor de Menú', icon: Utensils },
+    // 🔥 CAMBIO AQUÍ: La ruta ahora es /admin/menu-editor
+    { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
     { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
     { href: '/admin/inventory', label: 'Inventario', icon: Package },
     { href: '/waiter', label: 'Mesas', icon: LayoutDashboard },

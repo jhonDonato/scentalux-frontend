@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from 'react';
@@ -29,7 +28,6 @@ export default function WaiterLayout({
     );
   }
   
-  // Allow admin to see waiter page too
   if (user.role !== 'waiter' && user.role !== 'admin') {
       router.push('/login');
       return <div className="flex h-screen w-screen items-center justify-center">Redirigiendo...</div>;
@@ -39,7 +37,8 @@ export default function WaiterLayout({
   if (user.role === 'admin') {
     navItems = [
       { href: '/admin', label: 'Reportes', icon: BarChart3 },
-      { href: '/menu-editor', label: 'Editor de Menú', icon: Utensils },
+      // 🔥 CAMBIO AQUÍ
+      { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
       { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
       { href: '/admin/inventory', label: 'Inventario', icon: Package },
       { href: '/waiter', label: 'Mesas', icon: LayoutDashboard },
@@ -49,11 +48,11 @@ export default function WaiterLayout({
   } else { // Waiter
     navItems = [
       { href: '/waiter', label: 'Mesas', icon: LayoutDashboard },
-      { href: '/menu-editor', label: 'Editor de Menú', icon: Utensils },
+      // 🔥 CAMBIO AQUÍ
+      { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
       { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
     ];
   }
-
 
   return <div className="light"><DashboardLayout navItems={navItems}>{children}</DashboardLayout></div>;
 }

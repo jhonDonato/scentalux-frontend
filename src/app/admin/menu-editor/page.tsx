@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -12,8 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from '@/hooks/use-toast';
-import { Utensils, PlusCircle, Trash2, Save, Upload, GripVertical } from 'lucide-react';
+import { Utensils, PlusCircle, Save, Search, Filter, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { ImageUpload } from '@/components/ui/image-upload'; 
 import Image from 'next/image';
 import type { MenuItem } from '@/lib/types';
 import {
@@ -28,277 +30,512 @@ import {
 } from "@/components/ui/alert-dialog";
 import * as api from '@/lib/api';
 
-
+// --- SCHEMA ZOD CON REGLAS DE NEGOCIO ---
 const menuItemSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(3, "El nombre debe tener al menos 3 caracteres.").max(50, "El nombre no puede tener más de 50 caracteres."),
-  description: z.string().min(10, "La descripción debe tener al menos 10 caracteres.").max(200, "La descripción no puede tener más de 200 caracteres."),
+  id: z.union([z.string(), z.number()]).optional().transform(String),
+  
+  name: z.string()
+    .min(1, "El nombre es obligatorio.")
+    .min(3, "Mínimo 3 caracteres.")
+    .max(50, "Máximo 50 caracteres."),
+  
+  description: z.string()
+    .min(1, "La descripción es obligatoria.")
+    .min(10, "Mínimo 10 caracteres.")
+    .max(200, "Máximo 200 caracteres."),
+  
   price: z.preprocess(
-    (a) => parseFloat(z.string().parse(a)),
-    z.number().positive("El precio debe ser un número positivo.")
+    (a) => {
+        if (a === '' || a === undefined || a === null) return undefined;
+        return parseFloat(String(a));
+    },
+    z.number({ required_error: "El precio es obligatorio." })
+      .positive("El precio debe ser mayor a 0.")
+      .refine((val) => Number.isInteger(val * 10), "Debe ser múltiplo de 10 céntimos (ej: 20.10).")
   ),
+  
   category: z.enum(['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Platos a la Carta']),
+  
   stock: z.preprocess(
-    (a) => parseInt(z.string().parse(a), 10),
-    z.number().int().min(0, "El stock no puede ser negativo.")
+    (a) => {
+        if (a === '' || a === undefined || a === null) return undefined;
+        return parseFloat(String(a));
+    }, 
+    z.number({ required_error: "El stock es obligatorio." })
+      .min(0, "No puede ser negativo.")
+      .int("Debe ser un número entero.")
   ),
-  image: z.string().url("Se requiere una URL de imagen válida.").optional().or(z.literal('')),
+  
+  // La imagen sigue siendo "opcional" a nivel de tipo base...
+  image: z.string().nullable().optional().or(z.literal('')),
   published: z.boolean().default(true),
+})
+// ...PERO aquí aplicamos la REGLA DE VISIBILIDAD
+.refine((data) => {
+    // Si quiere estar PUBLICADO, DEBE tener IMAGEN
+    if (data.published === true) {
+        return !!data.image && data.image.length > 0;
+    }
+    return true; // Si está oculto, no importa si no tiene imagen
+}, {
+    message: "Para mostrar el plato, es OBLIGATORIO subir una imagen.",
+    path: ["published"], // El error aparecerá debajo del Switch
 });
 
+// --- COMPONENTE DEL FORMULARIO ---
+interface MenuItemFormProps {
+  initialData: MenuItem | null;
+  onSave: (data: MenuItem) => Promise<void>;
+  onCancel: () => void;
+  setIsDirty: (isDirty: boolean) => void;
+  formRef: any; 
+}
 
-function MenuItemForm({ item, onSave, onRemove }: { item: MenuItem, onSave: (id: string, data: MenuItem) => void, onRemove: (id: string) => void }) {
+function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: MenuItemFormProps) {
   const { toast } = useToast();
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   
-  const form = useForm<z.infer<typeof menuItemSchema>>({
-    resolver: zodResolver(menuItemSchema),
-    defaultValues: {
-      ...item,
-      image: item.image || ''
-    },
-  });
-  
-  useEffect(() => {
-    form.reset({
-      ...item,
-      image: item.image || ''
-    });
-  }, [item, form]);
-
-
-  const onSubmit = (data: z.infer<typeof menuItemSchema>) => {
-    onSave(item.id, { ...data, id: item.id });
-    toast({
-      title: "Plato Guardado",
-      description: `"${data.name}" ha sido guardado exitosamente.`,
-    });
+  const defaultValues = {
+    name: '', 
+    description: '', 
+    category: 'Platos a la Carta' as const, 
+    image: '', 
+    published: true // Por defecto intentará ser visible, activando la validación de imagen
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if(file.size > 2 * 1024 * 1024) { // 2MB limit
-        toast({ title: "Imagen muy grande", description: "Por favor, sube una imagen de menos de 2MB.", variant: "destructive" });
+  const form = useForm<z.infer<typeof menuItemSchema>>({
+    resolver: zodResolver(menuItemSchema),
+    defaultValues: initialData || defaultValues,
+  });
+
+  useEffect(() => {
+    setIsDirty(form.formState.isDirty);
+  }, [form.formState.isDirty, setIsDirty]);
+
+  // Actualizar formulario cuando cambia el plato seleccionado
+  useEffect(() => {
+    if (initialData) {
+      form.reset({ ...initialData, image: initialData.image || '' });
+      // Ya no necesitamos la alerta manual de "Falta Imagen" aquí, 
+      // porque el formulario mostrará el error si intentan guardar.
+    } else {
+      form.reset(defaultValues); 
+    }
+  }, [initialData, form]);
+
+  const onSubmit = async (data: z.infer<typeof menuItemSchema>) => {
+    if (isUploadingImage) {
+        toast({ title: "Espera", description: "La imagen se está subiendo...", variant: "destructive" });
         return;
+    }
+    try {
+      setIsSaving(true);
+      const idToSave = initialData?.id || `new-${Date.now()}`;
+      await onSave({ ...data, id: idToSave, image: data.image || '' });
+      
+      if (!initialData) {
+          form.reset(defaultValues); 
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const dataUrl = reader.result as string;
-        form.setValue('image', dataUrl, { shouldValidate: true, shouldDirty: true });
-      };
-      reader.readAsDataURL(file);
+      
+      toast({ title: "Guardado", description: "El plato ha sido guardado exitosamente." });
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Error", description: "No se pudo guardar.", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-     <>
-      <Card>
+    <Card className="mb-8 shadow-md border-l-4 border-l-primary/20">
        <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
-            <CardHeader>
+        <form ref={formRef} onSubmit={form.handleSubmit(onSubmit)}>
+            <CardHeader className="pb-4 border-b bg-gray-50/50">
                 <div className="flex justify-between items-center">
                     <div className='flex items-center gap-2'>
-                        <GripVertical className="h-5 w-5 text-muted-foreground cursor-grab" />
-                        <CardTitle className="text-lg font-semibold">{form.watch('name') || "Nuevo Plato"}</CardTitle>
+                        {initialData ? <Utensils className="h-5 w-5 text-primary" /> : <PlusCircle className="h-5 w-5 text-green-600" />}
+                        <CardTitle className="text-lg font-semibold">
+                            {initialData ? `Editando: ${initialData.name}` : "Registrar Nuevo Plato"}
+                        </CardTitle>
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => setIsDeleteDialogOpen(true)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {initialData && (
+                        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+                            Cancelar Edición
+                        </Button>
+                    )}
                 </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
+                 {/* Columna Imagen */}
                  <div className="space-y-4 md:col-span-1">
-                    <FormField
-                        control={form.control}
-                        name="image"
-                        render={({ field }) => (
+                    <FormField control={form.control} name="image" render={({ field }) => (
                             <FormItem>
-                            <FormLabel>Imagen</FormLabel>
-                            <FormControl>
-                                <div>
-                                    <Image 
-                                      src={field.value || 'https://picsum.photos/seed/placeholder/600/400'} 
-                                      alt={form.watch('name') || "preview"} 
-                                      width={300} 
-                                      height={200} 
-                                      className="rounded-md object-cover aspect-video mb-2 border" 
+                                <FormLabel>Imagen del Plato</FormLabel>
+                                <div className="mt-1">
+                                    <ImageUpload 
+                                        key={initialData?.id || 'new-plate'} 
+                                        currentImage={field.value || ''} 
+                                        onUploadStart={() => setIsUploadingImage(true)}
+                                        onImageChange={(url) => {
+                                            field.onChange(url);
+                                            setIsUploadingImage(false);
+                                        }}
                                     />
-                                    <div className="relative">
-                                      <Input 
-                                        id={`file-upload-${item.id}`}
-                                        type="file" 
-                                        accept="image/*" 
-                                        onChange={handleImageUpload} 
-                                        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                                      />
-                                      <label htmlFor={`file-upload-${item.id}`} className="w-full inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 cursor-pointer">
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        Subir Imagen
-                                      </label>
-                                    </div>
                                 </div>
-                            </FormControl>
-                            <FormMessage />
+                                <FormMessage />
                             </FormItem>
                         )}
-                        />
+                    />
                 </div>
 
+                {/* Columnas Datos */}
                 <div className="space-y-4 md:col-span-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <FormField control={form.control} name="name" render={({ field }) => ( <FormItem> <FormLabel>Nombre del Plato</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                        <FormField control={form.control} name="price" render={({ field }) => ( <FormItem> <FormLabel>Precio (S/.)</FormLabel> <FormControl><Input type="number" step="0.1" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+                        <FormField control={form.control} name="name" render={({ field }) => ( 
+                            <FormItem> 
+                                <FormLabel>Nombre <span className="text-destructive">*</span></FormLabel> 
+                                <FormControl><Input {...field} placeholder="Ej: Lomo Saltado" /></FormControl> 
+                                <FormMessage /> 
+                            </FormItem> 
+                        )} />
+                        
+                        <FormField control={form.control} name="price" render={({ field }) => ( 
+                            <FormItem> 
+                                <FormLabel>Precio (S/.) <span className="text-destructive">*</span></FormLabel> 
+                                <FormControl>
+                                    <Input 
+                                        type="number" 
+                                        step="0.10"
+                                        placeholder="0.00"
+                                        {...field} 
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            field.onChange(val === '' ? '' : val); 
+                                        }}
+                                        value={field.value ?? ''}
+                                    />
+                                </FormControl> 
+                                <FormMessage /> 
+                            </FormItem> 
+                        )} />
                     </div>
-                     <FormField control={form.control} name="description" render={({ field }) => ( <FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} rows={3} /></FormControl> <FormMessage /> </FormItem> )} />
+                     <FormField control={form.control} name="description" render={({ field }) => ( 
+                        <FormItem> 
+                            <FormLabel>Descripción <span className="text-destructive">*</span></FormLabel> 
+                            <FormControl><Textarea {...field} rows={3} placeholder="Ingredientes..." /></FormControl> 
+                            <FormMessage /> 
+                        </FormItem> 
+                    )} />
                     
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 items-end">
                         <FormField control={form.control} name="category" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Categoría</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormItem> 
+                                <FormLabel>Categoría</FormLabel> 
+                                <Select onValueChange={field.onChange} value={field.value}> 
+                                    <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Seleccione" />
+                                        </SelectTrigger>
+                                    </FormControl> 
+                                    <SelectContent> 
+                                        <SelectItem value="Entradas">Entradas</SelectItem> 
+                                        <SelectItem value="Platos Fuertes">Platos Fuertes</SelectItem> 
+                                        <SelectItem value="Platos a la Carta">Platos a la Carta</SelectItem> 
+                                        <SelectItem value="Bebidas">Bebidas</SelectItem> 
+                                        <SelectItem value="Postres">Postres</SelectItem> 
+                                    </SelectContent> 
+                                </Select> 
+                                <FormMessage /> 
+                            </FormItem>
+                        )} />
+                        
+                        <FormField control={form.control} name="stock" render={({ field }) => ( 
+                            <FormItem> 
+                                <FormLabel>Stock <span className="text-destructive">*</span></FormLabel> 
                                 <FormControl>
-                                    <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    <SelectItem value="Entradas">Entradas</SelectItem>
-                                    <SelectItem value="Platos Fuertes">Platos Fuertes</SelectItem>
-                                    <SelectItem value="Platos a la Carta">Platos a la Carta</SelectItem>
-                                    <SelectItem value="Bebidas">Bebidas</SelectItem>
-                                    <SelectItem value="Postres">Postres</SelectItem>
-                                </SelectContent>
-                                </Select>
+                                    <Input 
+                                        type="number" 
+                                        {...field}
+                                        value={field.value ?? ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            field.onChange(val === '' ? '' : val); 
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (["e", "E", "+", "-", ".", ","].includes(e.key)) {
+                                                e.preventDefault();
+                                            }
+                                        }}
+                                    />
+                                </FormControl> 
+                                <FormMessage /> 
+                            </FormItem> 
+                        )} />
+                        
+                        {/* SWITCH DE VISIBILIDAD */}
+                        <FormField control={form.control} name="published" render={({ field }) => (
+                            <FormItem className="flex flex-col space-y-2"> 
+                                <FormLabel>Publicado</FormLabel> 
+                                <div className="flex items-center h-10 space-x-2"> 
+                                    <FormControl>
+                                        <Switch checked={field.value} onCheckedChange={field.onChange} /> 
+                                    </FormControl>
+                                    <label className="text-sm font-medium cursor-pointer" onClick={() => field.onChange(!field.value)}>
+                                        {field.value ? "Visible" : "Oculto"}
+                                    </label> 
+                                </div>
+                                {/* 🔥 AQUÍ APARECERÁ EL ERROR SI FALTAN DATOS Y ESTÁ VISIBLE */}
                                 <FormMessage />
                             </FormItem>
                         )} />
-                        <FormField control={form.control} name="stock" render={({ field }) => ( <FormItem> <FormLabel>Stock</FormLabel> <FormControl><Input type="number" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                        
-                        <FormField control={form.control} name="published" render={({ field }) => (
-                            <FormItem className="flex flex-col space-y-2">
-                            <FormLabel>Publicado</FormLabel>
-                            <FormControl>
-                                <div className="flex items-center h-10 space-x-2">
-                                    <Switch checked={field.value} onCheckedChange={field.onChange} id={`published-switch-${item.id}`} />
-                                    <label htmlFor={`published-switch-${item.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{field.value ? "Visible" : "Oculto"}</label>
-                                </div>
-                            </FormControl>
-                            </FormItem>
-                        )} />
                     </div>
-                    <div className='flex justify-end'>
-                         <Button type="submit" disabled={!form.formState.isDirty}>
+                    <div className='flex justify-end items-center gap-3 pt-2'>
+                         {isUploadingImage && <span className="text-xs text-muted-foreground animate-pulse">Subiendo imagen...</span>}
+                         <Button type="submit" disabled={isSaving || isUploadingImage}>
                             <Save className="mr-2 h-4 w-4" />
-                            Guardar Cambios
+                            {isSaving ? 'Guardando...' : 'Guardar Cambios'}
                          </Button>
                     </div>
                 </div>
             </CardContent>
         </form>
        </Form>
-      </Card>
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-            <AlertDialogHeader>
-            <AlertDialogTitle>¿Está seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-                Esta acción eliminará el plato "{item.name}" permanentemente. No se puede deshacer.
-            </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => onRemove(item.id)}>Eliminar</AlertDialogAction>
-            </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-     </>
-  )
+    </Card>
+  );
 }
 
-
+// --- PÁGINA PRINCIPAL ---
 export default function MenuEditorPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const { toast } = useToast();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  
+  const [isFormDirty, setIsFormDirty] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null | undefined>(undefined);
+  const [showWarning, setShowWarning] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('Todos');
 
   useEffect(() => {
     api.getMenuItems().then(setMenuItems);
   }, []);
 
-  const handleSave = async (id: string, data: MenuItem) => {
-    const isNew = id.startsWith('new-');
-    if (isNew) {
+  const handleSaveData = async (data: MenuItem) => {
+    if (!selectedId) {
       const newItem = await api.createMenuItem(data);
-      if (newItem) {
-        setMenuItems(prev => [...prev.filter(i => i.id !== id), newItem]);
-      }
+      if (newItem) setMenuItems(prev => [...prev, newItem]);
     } else {
-      const updatedItem = await api.updateMenuItem(id, data);
+      const updatedItem = await api.updateMenuItem(selectedId, data);
       if (updatedItem) {
-        setMenuItems(prev => prev.map(item => item.id === id ? updatedItem : item));
+        setMenuItems(prev => prev.map(item => item.id === selectedId ? updatedItem : item));
       }
     }
+    setSelectedId(null);
+    setIsFormDirty(false);
+    setPendingId(undefined);
   };
-  
-  const handleRemove = async (id: string) => {
-    const isNew = id.startsWith('new-');
-    if (isNew) {
-      setMenuItems(prev => prev.filter(item => item.id !== id));
-      toast({ title: "Plato no guardado eliminado." });
-    } else {
-      const success = await api.deleteMenuItem(id);
-      if (success) {
-        setMenuItems(prev => prev.filter(item => item.id !== id));
-        toast({ title: "Plato Eliminado", description: "El plato ha sido eliminado exitosamente." });
-      } else {
-        toast({ title: "Error", description: "No se pudo eliminar el plato.", variant: "destructive" });
-      }
-    }
-  }
 
-  const addNewDish = () => {
-    const newDish: MenuItem = {
-      id: `new-${Date.now()}`,
-      name: 'Nuevo Plato',
-      description: 'Describe este delicioso plato aquí...',
-      price: 0,
-      category: 'Platos a la Carta',
-      stock: 0,
-      image: '',
-      published: true,
-    };
-    setMenuItems(prev => [...prev, newDish]);
+  const handleRowClick = (id: string | null) => {
+    if (selectedId === id) return; 
+
+    if (isFormDirty) {
+      setPendingId(id); 
+      setShowWarning(true); 
+    } else {
+      setSelectedId(id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
+
+  const confirmDiscard = () => {
+    setSelectedId(pendingId as string | null);
+    setIsFormDirty(false); 
+    setShowWarning(false);
+    setPendingId(undefined);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const confirmSaveAndSwitch = async () => {
+    if (formRef.current) {
+        formRef.current.requestSubmit(); 
+        
+        setTimeout(() => {
+            if (pendingId !== undefined) {
+                setSelectedId(pendingId);
+                setShowWarning(false);
+                setPendingId(undefined);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }, 500);
+    }
+  };
+
+  const filteredItems = useMemo(() => {
+    return menuItems.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
+      const matchesCategory = categoryFilter === 'Todos' || item.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [menuItems, search, categoryFilter]);
+
+  const itemsToShow = filteredItems.slice(0, 10);
+  const selectedItemData = selectedId ? menuItems.find(i => i.id === selectedId) || null : null;
+  const isCreatingNew = selectedId === null; 
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-            <Utensils className="h-8 w-8 text-primary" />
-            <div>
-                <h1 className="text-3xl font-bold font-headline">Editor del Menú</h1>
-                <p className="text-muted-foreground">Añade, edita y gestiona los platos de tu restaurante.</p>
-            </div>
-        </div>
-        <Button onClick={addNewDish}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Añadir Plato
-        </Button>
+    <div className="space-y-6 pb-20">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold font-headline">Editor del Menú</h1>
+        <p className="text-muted-foreground">Gestiona el inventario de platos diarios.</p>
       </div>
-      
-      {menuItems.length > 0 ? (
-          <div className="space-y-6">
-              {menuItems.map(item => (
-                <MenuItemForm key={item.id} item={item} onSave={handleSave} onRemove={handleRemove} />
-              ))}
-          </div>
-      ) : (
-        <div className="text-center py-20 border-2 border-dashed rounded-lg flex flex-col items-center justify-center">
-            <p className="text-muted-foreground mb-4">No hay ningún plato en el menú todavía.</p>
-            <Button onClick={addNewDish}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Agregar el Primer Plato
-            </Button>
+
+      <MenuItemForm 
+        initialData={selectedItemData} 
+        onSave={handleSaveData} 
+        onCancel={() => handleRowClick(null)}
+        setIsDirty={setIsFormDirty}
+        formRef={formRef}
+      />
+
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
+        <div className="flex items-center gap-2 w-full md:w-auto">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Utensils className="h-5 w-5" /> Listado de Platos
+            </h2>
+            <Badge variant="secondary">{filteredItems.length} resultados</Badge>
         </div>
-      )}
+        <div className="flex gap-2 w-full md:w-auto">
+            <div className="relative w-full md:w-64">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder="Buscar plato..." 
+                    className="pl-8" 
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                />
+            </div>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[180px]">
+                    <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        <SelectValue placeholder="Categoría" />
+                    </div>
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="Todos">Todas</SelectItem>
+                    <SelectItem value="Entradas">Entradas</SelectItem>
+                    <SelectItem value="Platos Fuertes">Platos Fuertes</SelectItem>
+                    <SelectItem value="Platos a la Carta">Platos a la Carta</SelectItem>
+                    <SelectItem value="Bebidas">Bebidas</SelectItem>
+                    <SelectItem value="Postres">Postres</SelectItem>
+                </SelectContent>
+            </Select>
+        </div>
+      </div>
+
+      <div className="rounded-md border bg-white shadow-sm overflow-hidden">
+        <Table>
+            <TableHeader>
+                <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    <TableHead className="w-[80px]">Imagen</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead className="hidden md:table-cell">Categoría</TableHead>
+                    <TableHead>Precio</TableHead>
+                    <TableHead>Stock</TableHead>
+                    <TableHead>Estado</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {itemsToShow.length > 0 ? (
+                    itemsToShow.map((item) => (
+                        <TableRow 
+                            key={item.id} 
+                            onClick={() => handleRowClick(item.id)}
+                            className={`cursor-pointer transition-colors hover:bg-blue-50 ${selectedId === item.id ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-primary' : ''}`}
+                        >
+                            <TableCell>
+                                <div className="relative h-10 w-10 rounded overflow-hidden border bg-gray-100">
+                                    {item.image ? (
+                                        <Image src={item.image} alt={item.name} fill className="object-cover" unoptimized />
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full w-full"><ImageIcon className="h-4 w-4 text-gray-400" /></div>
+                                    )}
+                                </div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                                {item.name}
+                                {selectedId === item.id && <span className="ml-2 text-xs text-primary font-bold">(Editando)</span>}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell">
+                                <Badge variant="outline">{item.category}</Badge>
+                            </TableCell>
+                            <TableCell>S/. {item.price.toFixed(2)}</TableCell>
+                            <TableCell>{item.stock}</TableCell>
+                            <TableCell>
+                                {item.published ? (
+                                    <Badge className="bg-green-500 hover:bg-green-600">Visible</Badge>
+                                ) : (
+                                    <Badge variant="destructive">Oculto</Badge>
+                                )}
+                            </TableCell>
+                        </TableRow>
+                    ))
+                ) : (
+                    <TableRow>
+                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                            No se encontraron platos.
+                        </TableCell>
+                    </TableRow>
+                )}
+            </TableBody>
+        </Table>
+        {filteredItems.length > 10 && (
+            <div className="p-4 text-center text-xs text-muted-foreground bg-gray-50 border-t">
+                Mostrando los primeros 10 de {filteredItems.length} platos. Usa el buscador para ver más.
+            </div>
+        )}
+      </div>
+
+      <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+                    <AlertCircle className="h-5 w-5" /> 
+                    {isCreatingNew ? "Registro incompleto" : "Cambios sin guardar"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                    {isCreatingNew 
+                        ? "Estás registrando un nuevo plato y no has terminado. Si sales ahora, perderás los datos ingresados."
+                        : `Tienes modificaciones pendientes en "${menuItems.find(i => i.id === selectedId)?.name}".`
+                    }
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                {isCreatingNew ? (
+                    <>
+                        <Button variant="destructive" onClick={confirmDiscard}>
+                            Salir de todas formas
+                        </Button>
+                        <Button variant="outline" onClick={() => setShowWarning(false)}>
+                            Continuar editando
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <AlertDialogCancel onClick={() => setShowWarning(false)}>Cancelar</AlertDialogCancel>
+                        <Button variant="destructive" onClick={confirmDiscard}>
+                            Descartar cambios
+                        </Button>
+                        <Button onClick={confirmSaveAndSwitch}>
+                            Guardar cambios
+                        </Button>
+                    </>
+                )}
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

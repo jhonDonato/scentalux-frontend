@@ -1,21 +1,22 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Upload, X, Loader2 } from 'lucide-react';
+import { Upload, X, Loader2, Image as ImageIcon, Info } from 'lucide-react';
 import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
 
 interface ImageUploadProps {
-  onImageChange: (imageUrl: string) => void; // Solo recibe URL, no File
+  onImageChange: (imageUrl: string) => void;
+  onUploadStart?: () => void;
   currentImage?: string;
-  endpoint?: string; // Endpoint de upload: '/api/upload/image' o '/api/upload/receipt'
+  endpoint?: string;
 }
 
 export function ImageUpload({ 
   onImageChange, 
+  onUploadStart,
   currentImage, 
   endpoint = '/api/upload/image' 
 }: ImageUploadProps) {
@@ -24,42 +25,33 @@ export function ImageUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Escuchamos cambios externos (ej: cambiar de plato en la tabla)
+  useEffect(() => {
+    setPreviewUrl(currentImage || '');
+  }, [currentImage]);
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validar tipo de archivo
     if (!file.type.startsWith('image/')) {
-      toast({
-        title: 'Error',
-        description: 'Por favor, selecciona un archivo de imagen válido',
-        variant: 'destructive'
-      });
+      toast({ title: 'Formato incorrecto', description: 'Por favor selecciona un archivo de imagen (JPG, PNG, WEBP).', variant: 'destructive' });
       return;
     }
-
-    // Validar tamaño (max 5MB)
+    
     if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: 'Error',
-        description: 'La imagen debe ser menor a 5MB',
-        variant: 'destructive'
-      });
+      toast({ title: 'Imagen muy pesada', description: 'La imagen debe pesar menos de 5MB.', variant: 'destructive' });
       return;
     }
 
     try {
       setUploading(true);
+      if (onUploadStart) onUploadStart();
 
-      // 1. Crear preview temporal (base64)
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const tempUrl = e.target?.result as string;
-        setPreviewUrl(tempUrl);
-      };
+      reader.onload = (e) => setPreviewUrl(e.target?.result as string);
       reader.readAsDataURL(file);
 
-      // 2. Subir al servidor
       const formData = new FormData();
       formData.append('file', file);
 
@@ -68,32 +60,20 @@ export function ImageUpload({
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
+      if (!response.ok) throw new Error('Error al subir imagen');
 
       const result = await response.json();
+      const cloudUrl = result.url; 
       
-      // 3. Actualizar con la URL del servidor
-      const serverUrl = result.url; // Ej: "/uploads/abc123.jpg"
-      setPreviewUrl(`http://localhost:9090${serverUrl}`);
-      
-      // 4. Notificar al padre con la URL del servidor
-      onImageChange(serverUrl); // Solo la ruta: "/uploads/abc123.jpg"
+      setPreviewUrl(cloudUrl);
+      onImageChange(cloudUrl);
 
-      toast({
-        title: '¡Imagen subida!',
-        description: 'La imagen se ha guardado en el servidor',
-      });
+      toast({ title: '¡Imagen guardada!', description: 'Subida correctamente a la nube.' });
 
     } catch (error: any) {
-      console.error('Error uploading image:', error);
-      toast({
-        title: 'Error al subir imagen',
-        description: error.message || 'Intenta con otra imagen',
-        variant: 'destructive'
-      });
-      setPreviewUrl('');
+      console.error(error);
+      toast({ title: 'Error', description: 'No se pudo subir la imagen.', variant: 'destructive' });
+      setPreviewUrl(currentImage || '');
     } finally {
       setUploading(false);
     }
@@ -102,87 +82,85 @@ export function ImageUpload({
   const handleRemoveImage = () => {
     setPreviewUrl('');
     onImageChange('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleClick = () => {
-    if (!uploading) {
-      fileInputRef.current?.click();
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
-    <div className="space-y-4">
-      <Label htmlFor="picture">Imagen</Label>
-      
+    <div className="space-y-3">
+      {/* 🔥 CAMBIO: Se eliminó el div con el texto duplicado "Imagen del Plato" aquí */}
+
       {previewUrl ? (
-        <div className="relative w-full max-w-xs">
-          <div className="relative h-48 w-full rounded-lg border-2 border-dashed border-gray-300 overflow-hidden">
-            <Image
-              src={previewUrl}
-              alt="Vista previa"
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 300px"
-              unoptimized={previewUrl.startsWith('data:')} // Desoptimizar para data URLs
-            />
+        <div className="relative w-full">
+          {/* FORZAMOS ASPECT RATIO 4:3 */}
+          <div className="relative w-full aspect-[4/3] rounded-lg border-2 border-dashed overflow-hidden bg-gray-50 flex items-center justify-center group">
+            <Image 
+              src={previewUrl} 
+              alt="Vista previa" 
+              fill 
+              className="object-cover transition-transform duration-500 group-hover:scale-105" 
+              unoptimized={true} 
+            /> 
+            
             {uploading && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <Loader2 className="h-8 w-8 text-white animate-spin" />
-              </div>
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                    <Loader2 className="animate-spin text-white h-8 w-8"/>
+                </div>
             )}
           </div>
-          <Button
-            type="button"
-            variant="destructive"
-            size="icon"
-            className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+          
+          <Button 
+            type="button" 
+            variant="destructive" 
+            size="icon" 
+            className="absolute -top-2 -right-2 h-7 w-7 rounded-full shadow-md hover:scale-110 transition-transform" 
             onClick={handleRemoveImage}
             disabled={uploading}
           >
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       ) : (
-        <div
-          className="relative w-full max-w-xs border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors cursor-pointer"
-          onClick={handleClick}
+        <div 
+            onClick={() => !uploading && fileInputRef.current?.click()} 
+            className="cursor-pointer border-2 border-dashed border-gray-300 hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 rounded-lg w-full aspect-[4/3] flex flex-col items-center justify-center bg-gray-50/50"
         >
-          {uploading ? (
-            <Loader2 className="mx-auto h-8 w-8 text-gray-400 animate-spin" />
-          ) : (
-            <Upload className="mx-auto h-8 w-8 text-gray-400" />
-          )}
-          <div className="mt-2">
-            <span className="text-sm font-medium text-gray-900">
-              {uploading ? 'Subiendo...' : 'Subir imagen'}
-            </span>
-            <p className="text-xs text-gray-500">
-              PNG, JPG, JPEG hasta 5MB
-            </p>
-          </div>
+           {uploading ? (
+               <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary"/>
+           ) : (
+               <>
+                <div className="p-3 bg-white rounded-full shadow-sm mb-3">
+                    <Upload className="h-6 w-6 text-primary" />
+                </div>
+                <span className="text-sm font-semibold text-gray-700">Subir imagen</span>
+                <span className="text-xs text-muted-foreground mt-1">Click para explorar</span>
+               </>
+           )}
         </div>
       )}
 
-      <Input
-        id="picture"
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileSelect}
-        className="hidden"
-        disabled={uploading}
-      />
-      
-      {previewUrl && (
-        <p className="text-xs text-gray-500">
-          {previewUrl.startsWith('data:') 
-            ? '⏳ Procesando imagen...' 
-            : '✓ Imagen guardada en el servidor'}
+      {/* ZONA DE RECOMENDACIONES */}
+      <div className="bg-blue-50 border border-blue-100 rounded-md p-3 space-y-2">
+        <div className="flex gap-2 items-start text-xs text-blue-700">
+            <Info className="h-4 w-4 shrink-0 mt-0.5" />
+            <ul className="list-disc pl-3 space-y-1">
+                <li><strong>Formato:</strong> Horizontal (Paisaje).</li>
+                <li><strong>Proporción:</strong> 4:3 (Ej: 800x600 px).</li>
+                <li><strong>Peso Máximo:</strong> 5MB.</li>
+            </ul>
+        </div>
+        <p className="text-[10px] text-muted-foreground pl-6">
+            * Las imágenes verticales serán recortadas al centro automáticamente.
         </p>
-      )}
+      </div>
+
+      <Input 
+        ref={fileInputRef} 
+        type="file" 
+        accept="image/png, image/jpeg, image/webp" 
+        onChange={handleFileSelect} 
+        className="hidden" 
+        disabled={uploading} 
+      />
     </div>
   );
 }
