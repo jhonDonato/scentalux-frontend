@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import * as api from '@/lib/api';
 
-// --- SCHEMA ZOD CON REGLAS DE NEGOCIO ---
 const menuItemSchema = z.object({
   id: z.union([z.string(), z.number()]).optional().transform(String),
   
@@ -66,23 +65,19 @@ const menuItemSchema = z.object({
       .int("Debe ser un número entero.")
   ),
   
-  // La imagen sigue siendo "opcional" a nivel de tipo base...
   image: z.string().nullable().optional().or(z.literal('')),
   published: z.boolean().default(true),
 })
-// ...PERO aquí aplicamos la REGLA DE VISIBILIDAD
 .refine((data) => {
-    // Si quiere estar PUBLICADO, DEBE tener IMAGEN
     if (data.published === true) {
         return !!data.image && data.image.length > 0;
     }
-    return true; // Si está oculto, no importa si no tiene imagen
+    return true; 
 }, {
     message: "Para mostrar el plato, es OBLIGATORIO subir una imagen.",
-    path: ["published"], // El error aparecerá debajo del Switch
+    path: ["published"], 
 });
 
-// --- COMPONENTE DEL FORMULARIO ---
 interface MenuItemFormProps {
   initialData: MenuItem | null;
   onSave: (data: MenuItem) => Promise<void>;
@@ -101,7 +96,7 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
     description: '', 
     category: 'Platos a la Carta' as const, 
     image: '', 
-    published: true // Por defecto intentará ser visible, activando la validación de imagen
+    published: true
   };
 
   const form = useForm<z.infer<typeof menuItemSchema>>({
@@ -113,12 +108,10 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
     setIsDirty(form.formState.isDirty);
   }, [form.formState.isDirty, setIsDirty]);
 
-  // Actualizar formulario cuando cambia el plato seleccionado
   useEffect(() => {
     if (initialData) {
       form.reset({ ...initialData, image: initialData.image || '' });
-      // Ya no necesitamos la alerta manual de "Falta Imagen" aquí, 
-      // porque el formulario mostrará el error si intentan guardar.
+
     } else {
       form.reset(defaultValues); 
     }
@@ -167,7 +160,6 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
                 </div>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-                 {/* Columna Imagen */}
                  <div className="space-y-4 md:col-span-1">
                     <FormField control={form.control} name="image" render={({ field }) => (
                             <FormItem>
@@ -189,7 +181,6 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
                     />
                 </div>
 
-                {/* Columnas Datos */}
                 <div className="space-y-4 md:col-span-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormField control={form.control} name="name" render={({ field }) => ( 
@@ -273,7 +264,6 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
                             </FormItem> 
                         )} />
                         
-                        {/* SWITCH DE VISIBILIDAD */}
                         <FormField control={form.control} name="published" render={({ field }) => (
                             <FormItem className="flex flex-col space-y-2"> 
                                 <FormLabel>Publicado</FormLabel> 
@@ -285,7 +275,6 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
                                         {field.value ? "Visible" : "Oculto"}
                                     </label> 
                                 </div>
-                                {/* 🔥 AQUÍ APARECERÁ EL ERROR SI FALTAN DATOS Y ESTÁ VISIBLE */}
                                 <FormMessage />
                             </FormItem>
                         )} />
@@ -305,7 +294,6 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
   );
 }
 
-// --- PÁGINA PRINCIPAL ---
 export default function MenuEditorPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

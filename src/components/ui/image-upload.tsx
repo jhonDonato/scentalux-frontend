@@ -25,7 +25,6 @@ export function ImageUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Escuchamos cambios externos (ej: cambiar de plato en la tabla)
   useEffect(() => {
     setPreviewUrl(currentImage || '');
   }, [currentImage]);
@@ -87,11 +86,9 @@ export function ImageUpload({
 
   return (
     <div className="space-y-3">
-      {/* 🔥 CAMBIO: Se eliminó el div con el texto duplicado "Imagen del Plato" aquí */}
 
       {previewUrl ? (
         <div className="relative w-full">
-          {/* FORZAMOS ASPECT RATIO 4:3 */}
           <div className="relative w-full aspect-[4/3] rounded-lg border-2 border-dashed overflow-hidden bg-gray-50 flex items-center justify-center group">
             <Image 
               src={previewUrl} 

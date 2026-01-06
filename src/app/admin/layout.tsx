@@ -30,7 +30,6 @@ export default function AdminLayout({
 
   const navItems = [
     { href: '/admin', label: 'Reportes', icon: BarChart3 },
-    // 🔥 CAMBIO AQUÍ: La ruta ahora es /admin/menu-editor
     { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
     { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
     { href: '/admin/inventory', label: 'Inventario', icon: Package },

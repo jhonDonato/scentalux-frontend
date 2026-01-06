@@ -37,7 +37,6 @@ export default function WaiterLayout({
   if (user.role === 'admin') {
     navItems = [
       { href: '/admin', label: 'Reportes', icon: BarChart3 },
-      // 🔥 CAMBIO AQUÍ
       { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
       { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
       { href: '/admin/inventory', label: 'Inventario', icon: Package },
@@ -45,10 +44,9 @@ export default function WaiterLayout({
       { href: '/admin/calendar', label: 'Calendario', icon: CalendarDays },
       { href: '/admin/notes', label: 'Notas', icon: Notebook },
     ];
-  } else { // Waiter
+  } else { 
     navItems = [
       { href: '/waiter', label: 'Mesas', icon: LayoutDashboard },
-      // 🔥 CAMBIO AQUÍ
       { href: '/admin/menu-editor', label: 'Editor de Menú', icon: Utensils },
       { href: '/waiter/offers', label: 'Ofertas', icon: Tag },
     ];
