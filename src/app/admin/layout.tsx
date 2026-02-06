@@ -6,27 +6,21 @@ import { useAuth } from '@/hooks/use-auth';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LayoutDashboard, BarChart3, Package, Utensils, Tag, Notebook, CalendarDays } from 'lucide-react';
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && (!user || user.role !== 'admin')) {
+  if (!isLoading) {
+    console.log("DEBUG [AdminLayout]: Verificando acceso para rol:", user?.role);
+    if (!user || user.role !== 'admin') {
+      console.warn("DEBUG [AdminLayout]: Redirigiendo porque el rol no es admin.");
       router.push('/login');
+    } else {
+      console.log("DEBUG [AdminLayout]: Acceso concedido.");
     }
-  }, [user, isLoading, router]);
-
-  if (isLoading || !user || user.role !== 'admin') {
-    return (
-        <div className="flex h-screen w-screen items-center justify-center">
-            <div>Cargando y verificando acceso...</div>
-        </div>
-    );
   }
+}, [user, isLoading, router]);
 
   const navItems = [
     { href: '/admin', label: 'Reportes', icon: BarChart3 },

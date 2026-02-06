@@ -30,8 +30,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import * as api from '@/lib/api';
 
+// Schema del formulario (Maneja Strings en la UI)
 const menuItemSchema = z.object({
-  id: z.union([z.string(), z.number()]).optional().transform(String),
+  id: z.string().optional(),
   
   name: z.string()
     .min(1, "El nombre es obligatorio.")
@@ -53,7 +54,7 @@ const menuItemSchema = z.object({
       .refine((val) => Number.isInteger(val * 10), "Debe ser múltiplo de 10 céntimos (ej: 20.10).")
   ),
   
-  category: z.enum(['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Platos a la Carta']),
+  category: z.enum(['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Platos a la Carta', 'Ofertas', 'Promociones']),
   
   stock: z.preprocess(
     (a) => {
@@ -96,12 +97,14 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
     description: '', 
     category: 'Platos a la Carta' as const, 
     image: '', 
-    published: true
+    published: true,
+    price: 0,
+    stock: 0
   };
 
   const form = useForm<z.infer<typeof menuItemSchema>>({
     resolver: zodResolver(menuItemSchema),
-    defaultValues: initialData || defaultValues,
+    defaultValues: defaultValues,
   });
 
   useEffect(() => {
@@ -110,22 +113,33 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
 
   useEffect(() => {
     if (initialData) {
-      form.reset({ ...initialData, image: initialData.image || '' });
-
+      // Convertir el ID numérico a string para el formulario
+      form.reset({
+         ...initialData,
+         id: initialData.id?.toString(),
+         image: initialData.image || '' 
+      });
     } else {
       form.reset(defaultValues); 
     }
   }, [initialData, form]);
 
-  const onSubmit = async (data: z.infer<typeof menuItemSchema>) => {
+  const onSubmit = async (formData: z.infer<typeof menuItemSchema>) => {
     if (isUploadingImage) {
         toast({ title: "Espera", description: "La imagen se está subiendo...", variant: "destructive" });
         return;
     }
     try {
       setIsSaving(true);
-      const idToSave = initialData?.id || `new-${Date.now()}`;
-      await onSave({ ...data, id: idToSave, image: data.image || '' });
+      
+      // Convertir de nuevo al formato del modelo (MenuItem)
+      const dataToSave: MenuItem = {
+        ...formData,
+        id: formData.id ? Number(formData.id) : undefined, // Convertir String -> Number
+        image: formData.image || undefined
+      };
+
+      await onSave(dataToSave);
       
       if (!initialData) {
           form.reset(defaultValues); 
@@ -296,10 +310,10 @@ function MenuItemForm({ initialData, onSave, onCancel, setIsDirty, formRef }: Me
 
 export default function MenuEditorPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null); // Ahora es number
   
   const [isFormDirty, setIsFormDirty] = useState(false);
-  const [pendingId, setPendingId] = useState<string | null | undefined>(undefined);
+  const [pendingId, setPendingId] = useState<number | null | undefined>(undefined);
   const [showWarning, setShowWarning] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -311,8 +325,10 @@ export default function MenuEditorPage() {
   }, []);
 
   const handleSaveData = async (data: MenuItem) => {
-    if (!selectedId) {
-      const newItem = await api.createMenuItem(data);
+    if (selectedId === null) {
+      // Limpiamos el ID undefined/null antes de enviar
+      const { id, ...newItemData } = data; 
+      const newItem = await api.createMenuItem(newItemData);
       if (newItem) setMenuItems(prev => [...prev, newItem]);
     } else {
       const updatedItem = await api.updateMenuItem(selectedId, data);
@@ -325,7 +341,8 @@ export default function MenuEditorPage() {
     setPendingId(undefined);
   };
 
-  const handleRowClick = (id: string | null) => {
+  const handleRowClick = (id: number | undefined) => {
+    if (!id) return;
     if (selectedId === id) return; 
 
     if (isFormDirty) {
@@ -338,7 +355,7 @@ export default function MenuEditorPage() {
   };
 
   const confirmDiscard = () => {
-    setSelectedId(pendingId as string | null);
+    setSelectedId(pendingId as number | null);
     setIsFormDirty(false); 
     setShowWarning(false);
     setPendingId(undefined);
@@ -382,7 +399,10 @@ export default function MenuEditorPage() {
       <MenuItemForm 
         initialData={selectedItemData} 
         onSave={handleSaveData} 
-        onCancel={() => handleRowClick(null)}
+        onCancel={() => {
+            setSelectedId(null);
+            setIsFormDirty(false);
+        }}
         setIsDirty={setIsFormDirty}
         formRef={formRef}
       />

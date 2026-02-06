@@ -15,40 +15,74 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
-// URL del backend Spring Boot
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9090';
-
-// Mapeo de roles del backend al frontend
-const roleMapping: Record<string, 'admin' | 'waiter' | 'kitchen'> = {
-  'ADMIN': 'admin',
-  'MESERO': 'waiter',
-  'COCINA': 'kitchen'
-};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
+  // --- PARSER DE ROLES ULTRA-RESILIENTE ---
+  const parseBackendRole = (rawRole: any): 'admin' | 'waiter' | 'kitchen' => {
+    console.log("DEBUG [Auth]: Analizando rol crudo:", rawRole);
+    
+    let roleString = "";
+
+    try {
+      // Caso 1: Es un Arreglo (Ej: [{authority: 'ROLE_ADMIN'}] o ['ROLE_ADMIN'])
+      if (Array.isArray(rawRole) && rawRole.length > 0) {
+        const first = rawRole[0];
+        roleString = typeof first === 'object' ? (first.authority || first.role || JSON.stringify(first)) : String(first);
+      } 
+      // Caso 2: Es un Objeto simple
+      else if (typeof rawRole === 'object' && rawRole !== null) {
+        roleString = rawRole.authority || rawRole.role || JSON.stringify(rawRole);
+      } 
+      // Caso 3: Es un String directo
+      else {
+        roleString = String(rawRole || "");
+      }
+
+      const normalized = roleString.toUpperCase();
+      console.log("DEBUG [Auth]: String de rol identificado:", normalized);
+
+      if (normalized.includes('ADMIN')) return 'admin';
+      if (normalized.includes('MESERO') || normalized.includes('WAITER')) return 'waiter';
+      if (normalized.includes('COCINA') || normalized.includes('KITCHEN')) return 'kitchen';
+      
+    } catch (e) {
+      console.error("DEBUG [Auth]: Error fatal parseando rol:", e);
+    }
+
+    return 'waiter'; // Fallback seguro
+  };
+
   useEffect(() => {
-    // Verificar si hay token guardado
     const token = localStorage.getItem('auth_token');
     if (token) {
       try {
-        // Decodificar el token JWT para obtener info del usuario
         const payload = JSON.parse(atob(token.split('.')[1]));
-        const backendRole = payload.role?.split(',')[0] || 'USER';
-        
-        const userData: User = {
-          id: '1', // Temporal, podrías obtener el ID real del backend
-          name: payload.sub.split('@')[0], // Extraer nombre del email
-          username: payload.sub,
-          role: roleMapping[backendRole] || 'waiter'
-        };
-        
-        setUser(userData);
+        console.log("DEBUG [Auth]: Payload JWT completo:", payload);
+
+        const currentTime = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < currentTime) {
+          localStorage.removeItem('auth_token');
+          setUser(null);
+        } else {
+          // Buscamos el rol en cualquier lugar posible del token
+          const finalRole = parseBackendRole(payload.role || payload.roles || payload.authorities);
+          
+          const userData: User = {
+            id: '1',
+            name: payload.sub.split('@')[0],
+            username: payload.sub,
+            role: finalRole
+          };
+          console.log("DEBUG [Auth]: Usuario verificado y seteado:", userData);
+          setUser(userData);
+        }
       } catch (error) {
-        console.error('Error decoding token:', error);
+        console.error("DEBUG [Auth]: Error decodificando token:", error);
         localStorage.removeItem('auth_token');
       }
     }
@@ -59,51 +93,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
 
-      if (!response.ok) {
-        return false;
-      }
+      if (!response.ok) return false;
 
       const data = await response.json();
+      console.log("DEBUG [Auth]: Respuesta de Login completa:", data);
       
-      // Guardar token
       localStorage.setItem('auth_token', data.access_token);
       
-      // Crear objeto usuario
-      const backendRole = data.roles[0] || 'USER';
+      // Aplicamos la misma lógica de parseo a la respuesta del login
+      const finalRole = parseBackendRole(data.roles || data.role || data.authorities);
+
       const userData: User = {
-        id: '1', // Temporal
-        name: data.username.split('@')[0],
-        username: data.username,
-        role: roleMapping[backendRole] || 'waiter'
+        id: '1',
+        name: data.username ? data.username.split('@')[0] : username.split('@')[0],
+        username: data.username || username,
+        role: finalRole
       };
       
       setUser(userData);
-      
-      // Redirigir según el rol
-      switch (userData.role) {
-        case 'admin':
-          router.push('/admin');
-          break;
-        case 'waiter':
-          router.push('/waiter');
-          break;
-        case 'kitchen':
-          router.push('/kitchen');
-          break;
-        default:
-          router.push('/login');
-      }
+
+      // Redirigir según el rol detectado
+      if (finalRole === 'admin') router.push('/admin');
+      else if (finalRole === 'waiter') router.push('/waiter');
+      else if (finalRole === 'kitchen') router.push('/kitchen');
+      else router.push('/login');
       
       return true;
-      
     } catch (error) {
-      console.error('Login error:', error);
+      console.error("DEBUG [Auth]: Error en proceso de login:", error);
       return false;
     }
   }, [router]);
@@ -116,11 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <div className="w-full max-w-md space-y-4 p-4">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-12 w-full" />
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-50">
+        <div className="text-center space-y-4">
+          <Skeleton className="h-12 w-48 mx-auto" />
+          <p className="text-sm text-muted-foreground animate-pulse">Sincronizando seguridad...</p>
         </div>
       </div>
     );

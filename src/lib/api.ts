@@ -1,38 +1,51 @@
 /**
  * API real que se conecta al backend Spring Boot
+ * Mantiene simulaciones para módulos aún no desarrollados en Backend (Mesas, Notificaciones)
  */
-import type { MenuItem, Order, Table, Offer, Note, CalendarEvent, OrderItem, TableStatus, Notification } from './types';
+import type { 
+  MenuItem, 
+  Order, 
+  Table, 
+  Note, 
+  CalendarEvent, 
+  OrderItem, 
+  TableStatus, 
+  Notification, 
+  OfferRequest, 
+  Discount 
+} from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9090';
+// --- HELPERS ---
 
-// Helper para hacer fetch con token
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('auth_token');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  console.log(`DEBUG [API]: Petición a ${endpoint}`, { hasToken: !!token });
   
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
 
-  if (token) {
-    (headers as any)['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+
+  if (response.status === 401) {
+    console.error(`DEBUG [API]: Error 401 en ${endpoint}. Token inválido o expirado.`);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login?expired=true';
+      }
+    }
+    throw new Error("No autorizado");
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
+  console.log(`DEBUG [API]: Respuesta exitosa (${response.status}) de ${endpoint}`);
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (response.status === 204) return null;
   return response.json();
 }
 
-// Helper para subida de archivos
 async function uploadFile(endpoint: string, file: File, fieldName = 'file') {
-  const token = localStorage.getItem('auth_token');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
   const formData = new FormData();
   formData.append(fieldName, file);
 
@@ -47,228 +60,109 @@ async function uploadFile(endpoint: string, file: File, fieldName = 'file') {
     body: formData,
   });
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return response.json();
 }
 
-// --- API FUNCTIONS ---
-
-// TODO: Necesitarás crear estos endpoints en tu backend Spring Boot
-// Por ahora, mantengo la simulación pero puedes ir reemplazando gradualmente
-
+// SIMULACIÓN (Base de datos temporal para UI)
 let db = {
-  menuItems: [] as MenuItem[],
+  menuItems: [] as MenuItem[], 
   orders: [] as Order[],
   tables: Array.from({ length: 12 }, (_, i) => ({ id: (i + 1).toString(), status: 'free' })) as Table[],
-  offers: [] as Offer[],
-  notes: [] as Note[],
-  calendarEvents: [] as CalendarEvent[],
   notifications: [] as Notification[],
 };
 
-const LATENCY = 100; // ms
+const LATENCY = 100;
 const wait = () => new Promise(resolve => setTimeout(resolve, LATENCY));
 
-// --- FUNCIONES TEMPORALES (SIMULACIÓN) ---
 
-// Menu Items (Backend real)
+// --- MENU ITEMS (REAL + Cache Local para Simulación) ---
+
 export async function getMenuItems(): Promise<MenuItem[]> {
   try {
-    const response = await fetch(`${API_URL}/api/menu-items`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    
-    // Mapear los datos del backend al formato del frontend
-    return data.map((item: any) => ({
-      id: item.id.toString(), // Convertir a string para compatibilidad
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image: item.image || '',
-      stock: item.stock,
-      category: item.category as MenuItem['category'],
-      published: item.published
-    }));
+    const data = await fetchWithAuth('/api/menu-items');
+    const items = data.map((item: any) => ({ ...item, id: Number(item.id) }));
+    db.menuItems = items; 
+    return items;
   } catch (error) {
     console.error('Error fetching menu items:', error);
     return [];
   }
 }
 
-export async function getMenuItem(id: string): Promise<MenuItem | undefined> {
+export async function getMenuItem(id: string | number): Promise<MenuItem | undefined> {
   try {
-    const response = await fetch(`${API_URL}/api/menu-items/${id}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const item = await response.json();
-    
-    return {
-      id: item.id.toString(),
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image: item.image || '',
-      stock: item.stock,
-      category: item.category as MenuItem['category'],
-      published: item.published
-    };
+    return await fetchWithAuth(`/api/menu-items/${id}`);
   } catch (error) {
-    console.error('Error fetching menu item:', error);
     return undefined;
   }
 }
 
 export async function createMenuItem(itemData: Omit<MenuItem, 'id'>): Promise<MenuItem> {
-  try {
-    // Convertir al formato del backend
-    const backendData = {
-      name: itemData.name,
-      description: itemData.description,
-      price: itemData.price,
-      image: itemData.image || '',
-      stock: itemData.stock,
-      category: itemData.category,
-      published: itemData.published !== undefined ? itemData.published : true
-    };
-    
-    const response = await fetchWithAuth('/api/menu-items', {
-      method: 'POST',
-      body: JSON.stringify(backendData)
-    });
-    
-    const item = response;
-    
-    return {
-      id: item.id.toString(),
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image: item.image || '',
-      stock: item.stock,
-      category: item.category as MenuItem['category'],
-      published: item.published
-    };
-  } catch (error) {
-    console.error('Error creating menu item:', error);
-    throw error;
-  }
+  return fetchWithAuth('/api/menu-items', {
+    method: 'POST',
+    body: JSON.stringify(itemData)
+  });
 }
 
-export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Promise<MenuItem | null> {
-  try {
-    // Primero obtener el item actual
-    const currentItem = await getMenuItem(id);
-    if (!currentItem) return null;
-    
-    // Combinar updates
-    const updatedItem = { ...currentItem, ...updates };
-    
-    // Convertir al formato del backend
-    const backendData = {
-      name: updatedItem.name,
-      description: updatedItem.description,
-      price: updatedItem.price,
-      image: updatedItem.image || '',
-      stock: updatedItem.stock,
-      category: updatedItem.category,
-      published: updatedItem.published
-    };
-    
-    const response = await fetchWithAuth(`/api/menu-items/${parseInt(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(backendData)
-    });
-    
-    const item = response;
-    
-    return {
-      id: item.id.toString(),
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image: item.image || '',
-      stock: item.stock,
-      category: item.category as MenuItem['category'],
-      published: item.published
-    };
-  } catch (error) {
-    console.error('Error updating menu item:', error);
-    return null;
-  }
+export async function updateMenuItem(id: string | number, updates: Partial<MenuItem>): Promise<MenuItem | null> {
+  return fetchWithAuth(`/api/menu-items/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates)
+  });
 }
 
-export async function updateMenuItemStock(id: string, newStock: number): Promise<MenuItem | null> {
-  try {
-    const response = await fetchWithAuth(`/api/menu-items/${parseInt(id)}/stock?stock=${newStock}`, {
-      method: 'PATCH'
-    });
-    
-    const item = response;
-    
-    return {
-      id: item.id.toString(),
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image: item.image || '',
-      stock: item.stock,
-      category: item.category as MenuItem['category'],
-      published: item.published
-    };
-  } catch (error) {
-    console.error('Error updating menu item stock:', error);
-    return null;
-  }
+export async function updateMenuItemStock(id: string | number, newStock: number): Promise<MenuItem | null> {
+  return fetchWithAuth(`/api/menu-items/${id}/stock?stock=${newStock}`, {
+    method: 'PATCH'
+  });
 }
 
-export async function deleteMenuItem(id: string): Promise<boolean> {
+export async function deleteMenuItem(id: string | number): Promise<boolean> {
   try {
-    await fetchWithAuth(`/api/menu-items/${parseInt(id)}`, {
-      method: 'DELETE'
-    });
+    await fetchWithAuth(`/api/menu-items/${id}`, { method: 'DELETE' });
     return true;
   } catch (error) {
-    console.error('Error deleting menu item:', error);
     return false;
   }
 }
 
-// Offers (Temporal - simulación)
-export async function getOffers(): Promise<Offer[]> {
-  await wait();
-  return [...db.offers];
+
+// --- OFFERS / DISCOUNTS (REAL) ---
+
+export async function getOffers(): Promise<Discount[]> {
+  try {
+    return await fetchWithAuth('/api/discounts');
+  } catch (error) {
+    console.error('Error fetching discounts:', error);
+    return [];
+  }
 }
 
-export async function createOffer(offerData: Omit<Offer, 'id'>): Promise<Offer> {
-    await wait();
-    const newOffer: Offer = { ...offerData, id: `offer-${Date.now()}` };
-    db.offers.push(newOffer);
-    return newOffer;
+export async function createOffer(offerData: OfferRequest): Promise<Discount> {
+  return fetchWithAuth('/api/discounts', {
+    method: 'POST',
+    body: JSON.stringify(offerData),
+  });
 }
 
-export async function updateOffer(id: string, updates: Partial<Offer>): Promise<Offer | null> {
-    await wait();
-    const index = db.offers.findIndex(offer => offer.id === id);
-    if (index === -1) return null;
-    const updatedOffer = { ...db.offers[index], ...updates };
-    db.offers[index] = updatedOffer;
-    return updatedOffer;
+export async function updateOffer(id: string | number, updates: Partial<Discount>): Promise<Discount | null> {
+   console.warn("Update Offer no implementado en backend todavía.");
+   return null; 
 }
 
-export async function deleteOffer(id: string): Promise<boolean> {
-    await wait();
-    const initialLength = db.offers.length;
-    db.offers = db.offers.filter(offer => offer.id !== id);
-    return db.offers.length < initialLength;
+export async function deleteOffer(id: number): Promise<boolean> {
+  try {
+    await fetchWithAuth(`/api/discounts/${id}`, { method: 'DELETE' });
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
-// Tables (Temporal - simulación)
+
+// --- TABLES (SIMULACIÓN COMPLETA) ---
+
 export async function getTables(): Promise<Table[]> {
   await wait();
   return [...db.tables];
@@ -284,15 +178,12 @@ export async function updateTableStatus(tableId: string, status: TableStatus): P
     const index = db.tables.findIndex(t => t.id === tableId);
     if (index === -1) return null;
     db.tables[index].status = status;
-    if (status === 'free') {
-        db.tables[index].orderId = undefined;
-    }
+    if (status === 'free') db.tables[index].orderId = undefined;
     return db.tables[index];
 }
 
 export async function addTable(): Promise<Table | null> {
     await wait();
-    if(db.tables.length >= 15) return null;
     const newId = (db.tables.length > 0 ? Math.max(...db.tables.map(t => parseInt(t.id))) : 0) + 1;
     const newTable: Table = { id: newId.toString(), status: 'free' };
     db.tables.push(newTable);
@@ -301,14 +192,16 @@ export async function addTable(): Promise<Table | null> {
 
 export async function removeTable(): Promise<boolean> {
     await wait();
-    if(db.tables.length <= 8) return false;
+    if(db.tables.length <= 0) return false;
     const lastTable = db.tables[db.tables.length - 1];
     if (lastTable.status !== 'free') return false;
     db.tables.pop();
     return true;
 }
 
-// Orders (Temporal - simulación)
+
+// --- ORDERS (SIMULACIÓN COMPLETA) ---
+
 export async function getOrders(): Promise<Order[]> {
   await wait();
   return [...db.orders];
@@ -324,20 +217,10 @@ export async function getOrderByTableId(tableId: string): Promise<Order | null> 
 export async function createOrder(orderData: { tableId: string, items: OrderItem[], estimatedDeliveryTime: number }): Promise<Order | null> {
     await wait();
     
-    // Check stock
+    // Validación de stock usando la caché local de platos reales
     for (const item of orderData.items) {
-        const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
-        if (!menuItem || menuItem.stock < item.quantity) {
-            return null; // Stock not available
-        }
-    }
-
-    // Deduct stock
-    for (const item of orderData.items) {
-        const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
-        if (menuItem) {
-            menuItem.stock -= item.quantity;
-        }
+        const menuItem = db.menuItems.find(mi => mi.id == item.menuItemId); 
+        if (!menuItem || menuItem.stock < item.quantity) return null; 
     }
 
     const newOrder: Order = {
@@ -351,20 +234,18 @@ export async function createOrder(orderData: { tableId: string, items: OrderItem
     };
     db.orders.push(newOrder);
 
-    // Update table
+    // Actualizar mesa a ocupada
     const tableIndex = db.tables.findIndex(t => t.id === orderData.tableId);
     if (tableIndex !== -1) {
         db.tables[tableIndex].status = 'occupied';
         db.tables[tableIndex].orderId = newOrder.id;
     }
     
-    // Create notification
     createNotification({
-      message: `Tienes un pedido para la mesa ${newOrder.tableId}.`,
+      message: `Pedido nuevo mesa ${newOrder.tableId}.`,
       type: 'new-order',
       tableId: newOrder.tableId,
     });
-
     return newOrder;
 }
 
@@ -372,18 +253,17 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     await wait();
     const index = db.orders.findIndex(o => o.id === orderId);
     if (index === -1) return null;
-
+    
     db.orders[index].status = status;
     db.orders[index].lastUpdatedAt = Date.now();
-
+    
     const order = db.orders[index];
-
     if (status === 'ready') {
-        createNotification({
-            message: `El pedido de la Mesa ${order.tableId} está listo para entregar.`,
-            type: 'order-ready',
-            tableId: order.tableId
-        });
+       createNotification({
+           message: `Pedido Mesa ${order.tableId} listo.`,
+           type: 'order-ready',
+           tableId: order.tableId
+       });
     }
 
     return db.orders[index];
@@ -396,19 +276,19 @@ export async function editOrder(orderId: string, newItems: OrderItem[]): Promise
 
     const originalOrder = db.orders[orderIndex];
 
-    // Return original items to stock
+    // Restaurar stock original (simulado)
     for (const item of originalOrder.items) {
-        const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
+        const menuItem = db.menuItems.find(mi => mi.id == item.menuItemId);
         if (menuItem) menuItem.stock += item.quantity;
     }
 
-    // Check new stock and deduct
+    // Validar y descontar nuevo stock (simulado)
     for (const item of newItems) {
-        const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
+        const menuItem = db.menuItems.find(mi => mi.id == item.menuItemId);
         if (!menuItem || menuItem.stock < item.quantity) {
-             // Re-add original items to stock since transaction failed
+             // Revertir
              for (const item of originalOrder.items) {
-                const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
+                const menuItem = db.menuItems.find(mi => mi.id == item.menuItemId);
                 if (menuItem) menuItem.stock -= item.quantity;
             }
             return null;
@@ -420,7 +300,7 @@ export async function editOrder(orderId: string, newItems: OrderItem[]): Promise
     db.orders[orderIndex].lastUpdatedAt = Date.now();
     
     createNotification({
-        message: `El pedido de la Mesa ${originalOrder.tableId} fue modificado.`,
+        message: `Pedido Mesa ${originalOrder.tableId} modificado.`,
         type: 'new-order',
         tableId: originalOrder.tableId,
     });
@@ -435,26 +315,28 @@ export async function cancelOrder(orderId: string): Promise<boolean> {
 
     const order = db.orders[orderIndex];
 
-    // Return stock
+    // Restaurar stock (simulado)
     for (const item of order.items) {
-        const menuItem = db.menuItems.find(mi => mi.id === item.menuItemId);
+        const menuItem = db.menuItems.find(mi => mi.id == item.menuItemId);
         if (menuItem) menuItem.stock += item.quantity;
     }
 
-    // Update table
+    // Liberar mesa
     const tableIndex = db.tables.findIndex(t => t.id === order.tableId);
     if (tableIndex !== -1) {
         db.tables[tableIndex].status = 'free';
         db.tables[tableIndex].orderId = undefined;
     }
     
-    // Remove order
+    // Eliminar orden
     db.orders.splice(orderIndex, 1);
     
     return true;
 }
 
-// Notifications (Temporal - simulación)
+
+// --- NOTIFICATIONS & WAITER CALLS (SIMULACIÓN COMPLETA) ---
+
 export async function getNotifications(): Promise<Notification[]> {
     await wait();
     return [...db.notifications];
@@ -470,6 +352,11 @@ async function createNotification(data: Omit<Notification, 'id' | 'timestamp' | 
     db.notifications.unshift(newNotif);
 }
 
+export async function dismissNotification(notificationId: string): Promise<void> {
+    await wait();
+    db.notifications = db.notifications.filter(n => n.id !== notificationId);
+}
+
 export async function callWaiter(tableId: string): Promise<void> {
     await wait();
     const tableIndex = db.tables.findIndex(t => t.id === tableId);
@@ -477,7 +364,7 @@ export async function callWaiter(tableId: string): Promise<void> {
         db.tables[tableIndex].status = 'needs-attention';
     }
     createNotification({
-        message: `Mesa ${tableId} necesita atención!`,
+        message: `¡Mesa ${tableId} llama al mesero!`,
         type: 'call',
         tableId
     });
@@ -489,16 +376,11 @@ export async function acceptCall(tableId: string, notificationId: string): Promi
     if (tableIndex !== -1 && db.tables[tableIndex].status === 'needs-attention') {
         db.tables[tableIndex].status = 'occupied';
     }
-    dismissNotification(notificationId);
+    await dismissNotification(notificationId);
 }
 
-export async function dismissNotification(notificationId: string): Promise<void> {
-    await wait();
-    db.notifications = db.notifications.filter(n => n.id !== notificationId);
-}
 
-// --- FUNCIONES REALES PARA SUBIDA DE ARCHIVOS ---
-// Estas sí se conectan al backend real
+// --- ARCHIVOS (REAL) ---
 
 export async function uploadImage(file: File): Promise<{ url: string }> {
   return uploadFile('/api/upload/image', file);

@@ -1,5 +1,3 @@
-
-
 export type User = {
   id: string;
   name: string;
@@ -8,30 +6,32 @@ export type User = {
 };
 
 export type MenuItem = {
-  id: string;
+  id?: number;
   name: string;
   description: string;
   price: number;
   image?: string;
   stock: number;
-  category: 'Entradas' | 'Platos Fuertes' | 'Platos a la Carta' | 'Bebidas' | 'Postres';
+  category: 'Entradas' | 'Platos Fuertes' | 'Platos a la Carta' | 'Bebidas' | 'Postres' | 'Ofertas' | 'Promociones';
   published?: boolean;
+  isPromo?: boolean;
+  discount?: Discount; 
 };
 
 export type OrderItem = {
-  menuItemId: string;
+  menuItemId: string | number;
   quantity: number;
 };
 
 export type Order = {
-  id:string;
+  id: string;
   tableId: string;
   items: OrderItem[];
   status: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled';
   createdAt: number;
   lastUpdatedAt: number;
-  estimatedDeliveryTime: number; // in minutes
-  deliveryTimerId?: number; // Store timer ID
+  estimatedDeliveryTime: number; 
+  deliveryTimerId?: number;
 };
 
 export type TableStatus = 'free' | 'occupied' | 'needs-attention';
@@ -51,6 +51,24 @@ export type Notification = {
   tableId?: string;
 };
 
+export type DiscountModality = 'RESTAURANT' | 'DELIVERY' | 'ALL';
+
+export type Discount = {
+  id?: number;
+  description: string;
+  percentage: number;
+  startDate: string; 
+  endDate: string;   
+  modality: DiscountModality;
+  active?: boolean;
+};
+
+export type OfferRequest = Discount & {
+  menuItemIds?: number[]; 
+  newPromoItem?: MenuItem; 
+};
+
+// Mantenemos Offer por compatibilidad legacy si es necesario
 export type Offer = {
   id: string;
   title: string;
